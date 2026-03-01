@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/ppiankov/dnsspectre/internal/commands"
 )
 
 var (
@@ -12,10 +14,13 @@ var (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf("dnsspectre %s (commit: %s, built: %s)\n", version, commit, date)
-		return
+	vi := commands.VersionInfo{
+		Version: version,
+		Commit:  commit,
+		Date:    date,
 	}
-	fmt.Println("dnsspectre — DNS hygiene and subdomain takeover detection")
-	os.Exit(0)
+	if err := commands.Execute(vi); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
 }
