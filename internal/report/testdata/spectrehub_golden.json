@@ -1,0 +1,60 @@
+{
+  "schema": "spectre/v1",
+  "target": {
+    "type": "dns-zone",
+    "name": "example.com"
+  },
+  "findings": [
+    {
+      "type": "SUBDOMAIN_TAKEOVER_RISK",
+      "severity": "CRITICAL",
+      "domain": "cdn.example.com",
+      "target": "old.s3.amazonaws.com",
+      "service": "AWS S3",
+      "detail": "CNAME cdn.example.com points to old.s3.amazonaws.com (AWS S3) which returns NXDOMAIN and is claimable",
+      "metadata": {
+        "record_name": "cdn.example.com",
+        "record_type": "CNAME",
+        "record_values": [
+          "old.s3.amazonaws.com"
+        ],
+        "record_ttl": 300
+      }
+    },
+    {
+      "type": "DANGLING_CNAME",
+      "severity": "HIGH",
+      "domain": "app.example.com",
+      "target": "old.nxdomain.test",
+      "detail": "CNAME app.example.com points to old.nxdomain.test which returns NXDOMAIN",
+      "metadata": {
+        "record_name": "app.example.com",
+        "record_type": "CNAME",
+        "record_values": [
+          "old.nxdomain.test"
+        ],
+        "record_ttl": 600
+      }
+    },
+    {
+      "type": "NO_CAA_RECORD",
+      "severity": "LOW",
+      "domain": "example.com",
+      "detail": "domain example.com has no CAA record",
+      "metadata": {
+        "record_name": "example.com",
+        "record_type": "CAA",
+        "record_values": [],
+        "record_ttl": 0
+      }
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "critical": 1,
+    "high": 1,
+    "medium": 0,
+    "low": 1,
+    "info": 0
+  }
+}
