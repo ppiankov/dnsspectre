@@ -40,16 +40,16 @@ make build
 
 ### Windows
 
-Install with Go (works once any release tag exists):
-
-```powershell
-go install github.com/ppiankov/dnsspectre/cmd/dnsspectre@latest
-```
-
-Or, when a published release provides Windows binaries, download `dnsspectre_*_windows_amd64.zip` from [releases](https://github.com/ppiankov/dnsspectre/releases), unzip it, and run:
+Download `dnsspectre_*_windows_amd64.zip` from [releases](https://github.com/ppiankov/dnsspectre/releases), unzip it, and run:
 
 ```powershell
 .\dnsspectre.exe version
+```
+
+Or install with Go:
+
+```powershell
+go install github.com/ppiankov/dnsspectre/cmd/dnsspectre@latest
 ```
 
 ### Usage
