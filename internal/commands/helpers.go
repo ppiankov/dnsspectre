@@ -13,6 +13,7 @@ type GlobalOptions struct {
 	Format       string
 	Timeout      time.Duration
 	Fingerprints string
+	Config       string // --config flag: explicit config file path
 }
 
 // VersionInfo holds build metadata injected via ldflags.
