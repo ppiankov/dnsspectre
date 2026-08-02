@@ -38,6 +38,20 @@ cd dnsspectre
 make build
 ```
 
+### Windows
+
+Download the latest `dnsspectre_*_windows_amd64.zip` from [releases](https://github.com/ppiankov/dnsspectre/releases), unzip it, and run from a terminal:
+
+```powershell
+.\dnsspectre.exe version
+```
+
+Or install with Go:
+
+```powershell
+go install github.com/ppiankov/dnsspectre/cmd/dnsspectre@latest
+```
+
 ### Usage
 
 ```sh
