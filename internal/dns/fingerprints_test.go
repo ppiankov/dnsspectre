@@ -100,6 +100,7 @@ func TestMatchCNAME_Heroku(t *testing.T) {
 	}
 }
 
+// WO-19: a valid custom fingerprint YAML file loads into Fingerprint entries.
 func TestLoadFingerprints(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "custom.yaml")
@@ -130,12 +131,14 @@ func TestLoadFingerprints(t *testing.T) {
 	}
 }
 
+// WO-19: a missing fingerprints file returns an error rather than being ignored.
 func TestLoadFingerprints_MissingFile(t *testing.T) {
 	if _, err := LoadFingerprints(filepath.Join(t.TempDir(), "absent.yaml")); err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}
 }
 
+// WO-19: invalid YAML in a fingerprints file returns a parse error.
 func TestLoadFingerprints_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.yaml")
@@ -147,6 +150,7 @@ func TestLoadFingerprints_InvalidYAML(t *testing.T) {
 	}
 }
 
+// WO-26: an empty cname pattern is rejected so it cannot match every target.
 func TestLoadFingerprints_RejectsEmptyPattern(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.yaml")

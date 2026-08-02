@@ -8,38 +8,45 @@ import (
 	"github.com/ppiankov/dnsspectre/internal/analyzer"
 )
 
+// WO-16: SARIF 2.1.0 schema/version constants for the report envelope.
 const (
 	sarifSchema  = "https://json.schemastore.org/sarif-2.1.0.json"
 	sarifVersion = "2.1.0"
 )
 
+// WO-16: top-level SARIF report envelope ($schema, version, runs).
 type sarifReport struct {
 	Schema  string     `json:"$schema"`
 	Version string     `json:"version"`
 	Runs    []sarifRun `json:"runs"`
 }
 
+// WO-16: a single run: the tool driver and its results.
 type sarifRun struct {
 	Tool    sarifTool     `json:"tool"`
 	Results []sarifResult `json:"results"`
 }
 
+// WO-16: tool wrapper around the driver descriptor.
 type sarifTool struct {
 	Driver sarifDriver `json:"driver"`
 }
 
+// WO-16: tool driver: name, information URI, and declared rules.
 type sarifDriver struct {
 	Name           string      `json:"name"`
 	InformationURI string      `json:"informationUri"`
 	Rules          []sarifRule `json:"rules"`
 }
 
+// WO-16: a rule entry, one per distinct finding type.
 type sarifRule struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
+// WO-16: a SARIF result (ruleId, level, message, logicalLocations).
 type sarifResult struct {
 	RuleID           string                 `json:"ruleId"`
 	Level            string                 `json:"level"`
@@ -47,20 +54,20 @@ type sarifResult struct {
 	LogicalLocations []sarifLogicalLocation `json:"logicalLocations,omitempty"`
 }
 
+// WO-16: result message wrapper.
 type sarifMessage struct {
 	Text string `json:"text"`
 }
 
-// sarifLogicalLocation models the scanned DNS domain. A domain is not a file
-// artifact, so it is represented as a logical location (SARIF §3.28) rather
-// than a physical artifactLocation.
+// WO-16: the scanned domain modeled as a logical location (a domain is not a
+// file artifact, so it is not a physical artifactLocation; SARIF §3.28).
 type sarifLogicalLocation struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
 }
 
-// severityToSarifLevel maps dnsspectre severity to a SARIF result.level.
-// SARIF 2.1.0 permits only: none | note | warning | error.
+// WO-16: maps dnsspectre severity to a SARIF result.level
+// (none | note | warning | error).
 var severityToSarifLevel = map[analyzer.Severity]string{
 	analyzer.SeverityCritical: "error",
 	analyzer.SeverityHigh:     "error",
@@ -69,10 +76,8 @@ var severityToSarifLevel = map[analyzer.Severity]string{
 	analyzer.SeverityInfo:     "note",
 }
 
-// WriteSARIF writes findings as a SARIF 2.1.0 log. Each finding becomes a
-// result keyed by its finding type (ruleId), levelled by severity, and located
-// at its domain (as a logical location). Empty findings yield a valid run with
-// no results.
+// WO-16: WriteSARIF emits findings as a SARIF 2.1.0 log; each finding becomes
+// a result keyed by finding type, levelled by severity, located at its domain.
 func WriteSARIF(w io.Writer, zoneName string, findings []analyzer.Finding) error {
 	rules := make([]sarifRule, 0, len(findings))
 	seen := make(map[string]bool, len(findings))
@@ -80,6 +85,7 @@ func WriteSARIF(w io.Writer, zoneName string, findings []analyzer.Finding) error
 
 	for _, f := range findings {
 		ruleID := string(f.Type)
+		// WO-16: declare one rule per distinct finding type.
 		if !seen[ruleID] {
 			seen[ruleID] = true
 			rules = append(rules, sarifRule{
@@ -89,11 +95,13 @@ func WriteSARIF(w io.Writer, zoneName string, findings []analyzer.Finding) error
 			})
 		}
 
+		// WO-16: level the result by severity (fallback warning).
 		level := severityToSarifLevel[f.Severity]
 		if level == "" {
 			level = "warning"
 		}
 
+		// WO-16: locate the result at its domain (fall back to the zone name).
 		name := f.Domain
 		if name == "" {
 			name = zoneName
@@ -138,6 +146,7 @@ func WriteSARIF(w io.Writer, zoneName string, findings []analyzer.Finding) error
 	return nil
 }
 
+// WO-16: human-readable rule description per finding type for tool.driver.rules.
 func sarifRuleDescription(t analyzer.FindingType) string {
 	switch t {
 	case analyzer.SubdomainTakeoverRisk:

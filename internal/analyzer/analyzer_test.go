@@ -356,6 +356,7 @@ func TestParseMXHost(t *testing.T) {
 	}
 }
 
+// WO-20: overlapping fingerprints must yield one takeover finding, not duplicates.
 func TestAnalyze_TakeoverDedupOnOverlap(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{}}
 	// Two fingerprints whose CNAME patterns overlap the same target.

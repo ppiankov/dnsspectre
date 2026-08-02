@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// WO-19: yaml tags define the on-disk schema for custom fingerprint files.
 // Fingerprint describes a service susceptible to subdomain takeover.
 // The yaml tags also define the on-disk schema for custom fingerprint files
 // loaded by LoadFingerprints.
@@ -155,6 +156,7 @@ func MatchCNAME(cname string, fingerprints []Fingerprint) []Fingerprint {
 	return matches
 }
 
+// WO-19: LoadFingerprints reads custom fingerprints from a YAML file by path.
 // LoadFingerprints reads custom fingerprints from a YAML file. The file is a
 // YAML list of entries with keys: service, cnames, status_codes, body_patterns,
 // nxdomain (see Fingerprint). A missing/unreadable file returns an error so a

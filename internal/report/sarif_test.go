@@ -8,6 +8,7 @@ import (
 	"github.com/ppiankov/dnsspectre/internal/analyzer"
 )
 
+// WO-16: WriteSARIF emits valid SARIF 2.1.0 with rules, levels, and locations.
 func TestWriteSARIF(t *testing.T) {
 	findings := []analyzer.Finding{
 		{
@@ -75,6 +76,7 @@ func TestWriteSARIF(t *testing.T) {
 	}
 }
 
+// WO-16: an empty findings slice still yields a valid SARIF envelope.
 func TestWriteSARIF_Empty(t *testing.T) {
 	var buf bytes.Buffer
 	if err := WriteSARIF(&buf, "example.com", nil); err != nil {

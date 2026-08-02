@@ -75,6 +75,7 @@ func (a *Analyzer) checkCNAME(ctx context.Context, rec Record) []Finding {
 					Service:  fp.Service,
 					Detail:   fmt.Sprintf("CNAME %s points to %s (%s) which returns NXDOMAIN and is claimable", rec.Name, target, fp.Service),
 				})
+				// WO-20: emit one takeover finding per CNAME target; break prevents overlapping fingerprints duplicating.
 				break
 			}
 		}

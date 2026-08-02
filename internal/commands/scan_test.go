@@ -165,6 +165,7 @@ func TestScanDomainMode_TextOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
+	// WO-15: runScan now requires the loaded config (here an empty default).
 	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
@@ -205,6 +206,7 @@ func TestScanDomainMode_JSONOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
+	// WO-15: runScan now requires the loaded config (here an empty default).
 	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
@@ -244,6 +246,7 @@ func TestScanDomainMode_NoFindings(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
+	// WO-15: runScan now requires the loaded config (here an empty default).
 	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
@@ -361,6 +364,7 @@ func TestDnsQueryRecords_NoCNAME(t *testing.T) {
 	}
 }
 
+// WO-15: config-file values fill in scan flags that were not set explicitly.
 func TestResolveOptions_ConfigProvidesDefaults(t *testing.T) {
 	cmd, opts := NewRootCmd(VersionInfo{})
 	cfg := &config.Config{Domain: "cfg.example.com", Format: "json", Timeout: "15s"}
@@ -378,6 +382,7 @@ func TestResolveOptions_ConfigProvidesDefaults(t *testing.T) {
 	}
 }
 
+// WO-15: an explicit flag beats the config-file value (flag > config > builtin).
 func TestResolveOptions_ExplicitFlagBeatsConfig(t *testing.T) {
 	cmd, opts := NewRootCmd(VersionInfo{})
 	// Simulate `--domain flag.example.com` passed on the command line.
@@ -393,6 +398,7 @@ func TestResolveOptions_ExplicitFlagBeatsConfig(t *testing.T) {
 	}
 }
 
+// WO-15: an invalid config timeout is rejected with an error.
 func TestResolveOptions_InvalidTimeout(t *testing.T) {
 	cmd, opts := NewRootCmd(VersionInfo{})
 	cfg := &config.Config{Timeout: "not-a-duration"}
@@ -401,6 +407,7 @@ func TestResolveOptions_InvalidTimeout(t *testing.T) {
 	}
 }
 
+// WO-19: the config-provided fingerprints path flows into opts when the flag is unset.
 func TestResolveOptions_FingerprintsPath(t *testing.T) {
 	// config-provided fingerprints path flows in when the flag is not set.
 	cmd, opts := NewRootCmd(VersionInfo{})
@@ -425,6 +432,7 @@ func TestResolveOptions_FingerprintsPath(t *testing.T) {
 	}
 }
 
+// WO-19: a custom fingerprints file is loaded and takes effect during scan.
 func TestScanCustomFingerprints_TakesEffect(t *testing.T) {
 	// Custom fingerprint for a CNAME that no builtin matches.
 	dir := t.TempDir()
@@ -464,6 +472,7 @@ func TestScanCustomFingerprints_TakesEffect(t *testing.T) {
 	}
 }
 
+// WO-16: sarif format is routed to the SARIF reporter, not text.
 func TestScanDomainMode_SARIFOutput(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{
 		"test.example.com:CNAME": {
@@ -504,6 +513,7 @@ func TestScanDomainMode_SARIFOutput(t *testing.T) {
 	}
 }
 
+// WO-27: an explicit empty flag value clears a config-provided value.
 func TestResolveOptions_EmptyFlagClearsConfig(t *testing.T) {
 	cmd, opts := NewRootCmd(VersionInfo{})
 	// An explicit empty --domain marks the flag changed, so the config value
