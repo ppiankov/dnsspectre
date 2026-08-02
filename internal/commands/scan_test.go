@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	mdns "github.com/miekg/dns"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/ppiankov/dnsspectre/internal/aws"
 	"github.com/ppiankov/dnsspectre/internal/azure"
 	cfpkg "github.com/ppiankov/dnsspectre/internal/cloudflare"
+	"github.com/ppiankov/dnsspectre/internal/config"
 	"github.com/ppiankov/dnsspectre/internal/dns"
 	"github.com/ppiankov/dnsspectre/internal/gcp"
 	"github.com/ppiankov/dnsspectre/internal/report"
@@ -161,7 +163,7 @@ func TestScanDomainMode_TextOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := runScan(context.Background(), opts, &buf, mock)
+	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
 	}
@@ -201,7 +203,7 @@ func TestScanDomainMode_JSONOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := runScan(context.Background(), opts, &buf, mock)
+	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
 	}
@@ -240,7 +242,7 @@ func TestScanDomainMode_NoFindings(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := runScan(context.Background(), opts, &buf, mock)
+	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
 	}
@@ -354,6 +356,46 @@ func TestDnsQueryRecords_NoCNAME(t *testing.T) {
 		if r.Type == "CNAME" {
 			t.Error("should not produce CNAME record when resolver returns empty CNAME")
 		}
+	}
+}
+
+func TestResolveOptions_ConfigProvidesDefaults(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	cfg := &config.Config{Domain: "cfg.example.com", Format: "json", Timeout: "15s"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Domain != "cfg.example.com" {
+		t.Errorf("domain: want cfg.example.com, got %q", opts.Domain)
+	}
+	if opts.Format != "json" {
+		t.Errorf("format: want json, got %q", opts.Format)
+	}
+	if opts.Timeout != 15*time.Second {
+		t.Errorf("timeout: want 15s, got %v", opts.Timeout)
+	}
+}
+
+func TestResolveOptions_ExplicitFlagBeatsConfig(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	// Simulate `--domain flag.example.com` passed on the command line.
+	if err := cmd.ParseFlags([]string{"--domain", "flag.example.com"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	cfg := &config.Config{Domain: "cfg.example.com"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Domain != "flag.example.com" {
+		t.Errorf("domain: want flag.example.com (explicit flag beats config), got %q", opts.Domain)
+	}
+}
+
+func TestResolveOptions_InvalidTimeout(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	cfg := &config.Config{Timeout: "not-a-duration"}
+	if err := resolveOptions(cmd, opts, cfg); err == nil {
+		t.Fatal("expected error for invalid config timeout, got nil")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,11 +30,26 @@ Requires either --domain (DNS query mode) or --platform
 (platform enumeration mode). When using --platform, --zone is optional;
 omit it to scan all zones.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := config.Load(".dnsspectre.yaml")
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			if err := resolveOptions(cmd, opts, cfg); err != nil {
+				return err
+			}
+			// Re-validate after config defaults are applied: the root
+			// PersistentPreRunE ran against flag values before config-derived
+			// platform/format were filled in.
+			if err := ValidatePlatform(opts.Platform); err != nil {
+				return err
+			}
+			if err := ValidateFormat(opts.Format); err != nil {
+				return err
+			}
 			if err := validateScanFlags(opts); err != nil {
 				return err
 			}
-			ctx := cmd.Context()
-			return runScan(ctx, opts, cmd.OutOrStdout(), nil)
+			return runScan(cmd.Context(), opts, cfg, cmd.OutOrStdout(), nil)
 		},
 	}
 }
@@ -55,14 +71,40 @@ func validateScanFlags(opts *GlobalOptions) error {
 	return nil
 }
 
-// runScan orchestrates: config → resolver → records → analyze → report.
-// resolverOverride allows tests to inject a mock resolver.
-func runScan(ctx context.Context, opts *GlobalOptions, w io.Writer, resolverOverride dns.Resolver) error {
-	cfg, err := config.Load(".dnsspectre.yaml")
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+// resolveOptions applies config-file values as defaults for any scan option
+// whose flag was not explicitly set on the command line. Precedence is:
+// explicit flag > config file > builtin flag default. Using Flags().Changed
+// (rather than comparing against the default value) means an explicit flag
+// still wins even when it happens to equal its default. Excludes fingerprints
+// (owned by the fingerprints-loader path) and provider credentials (env>config).
+func resolveOptions(cmd *cobra.Command, opts *GlobalOptions, cfg *config.Config) error {
+	flags := cmd.Flags()
+	if !flags.Changed("platform") && cfg.Platform != "" {
+		opts.Platform = cfg.Platform
 	}
+	if !flags.Changed("domain") && cfg.Domain != "" {
+		opts.Domain = cfg.Domain
+	}
+	if !flags.Changed("zone") && cfg.Zone != "" {
+		opts.Zone = cfg.Zone
+	}
+	if !flags.Changed("format") && cfg.Format != "" {
+		opts.Format = cfg.Format
+	}
+	if !flags.Changed("timeout") && cfg.Timeout != "" {
+		d, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return fmt.Errorf("invalid config timeout %q: %w", cfg.Timeout, err)
+		}
+		opts.Timeout = d
+	}
+	return nil
+}
 
+// runScan orchestrates: resolver → records → analyze → report.
+// resolverOverride allows tests to inject a mock resolver.
+func runScan(ctx context.Context, opts *GlobalOptions, cfg *config.Config, w io.Writer, resolverOverride dns.Resolver) error {
+	var err error
 	var resolver dns.Resolver
 	if resolverOverride != nil {
 		resolver = resolverOverride
