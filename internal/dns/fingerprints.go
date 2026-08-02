@@ -168,5 +168,12 @@ func LoadFingerprints(path string) ([]Fingerprint, error) {
 	if err := yaml.Unmarshal(data, &fps); err != nil {
 		return nil, fmt.Errorf("parse fingerprints %s: %w", path, err)
 	}
+	for i, fp := range fps {
+		for _, c := range fp.CNAMEs {
+			if strings.TrimSpace(c) == "" {
+				return nil, fmt.Errorf("fingerprint %q (entry %d) has an empty cname pattern, which would match every target", fp.Service, i)
+			}
+		}
+	}
 	return fps, nil
 }

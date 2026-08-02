@@ -146,3 +146,15 @@ func TestLoadFingerprints_InvalidYAML(t *testing.T) {
 		t.Fatal("expected error for invalid YAML, got nil")
 	}
 }
+
+func TestLoadFingerprints_RejectsEmptyPattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	content := "- service: Broken\n  cnames: [\"\"]\n  status_codes: [404]\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFingerprints(path); err == nil {
+		t.Fatal("expected error for empty cname pattern, got nil")
+	}
+}
