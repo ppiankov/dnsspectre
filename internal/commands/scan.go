@@ -305,34 +305,37 @@ func cloudflareRecords(ctx context.Context, opts *GlobalOptions, cfg *config.Con
 	return "cloudflare", all, nil
 }
 
-func convertAWSRecords(records []aws.Record) []analyzer.Record {
+// convertRecords maps a slice of provider records into analyzer records using
+// toRecord. Every provider scanner shares this loop; only the per-type field
+// mapping differs, supplied as a closure by each wrapper below.
+func convertRecords[T any](records []T, toRecord func(T) analyzer.Record) []analyzer.Record {
 	out := make([]analyzer.Record, len(records))
 	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+		out[i] = toRecord(r)
 	}
 	return out
+}
+
+func convertAWSRecords(records []aws.Record) []analyzer.Record {
+	return convertRecords(records, func(r aws.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
 
 func convertGCPRecords(records []gcp.Record) []analyzer.Record {
-	out := make([]analyzer.Record, len(records))
-	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
-	}
-	return out
+	return convertRecords(records, func(r gcp.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
 
 func convertAzureRecords(records []azure.Record) []analyzer.Record {
-	out := make([]analyzer.Record, len(records))
-	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
-	}
-	return out
+	return convertRecords(records, func(r azure.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
 
 func convertCloudflareRecords(records []cloudflare.Record) []analyzer.Record {
-	out := make([]analyzer.Record, len(records))
-	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
-	}
-	return out
+	return convertRecords(records, func(r cloudflare.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
