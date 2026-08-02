@@ -464,5 +464,45 @@ func TestScanCustomFingerprints_TakesEffect(t *testing.T) {
 	}
 }
 
+func TestScanDomainMode_SARIFOutput(t *testing.T) {
+	mock := &mockResolver{responses: map[string]*dns.Result{
+		"test.example.com:CNAME": {
+			Domain: "test.example.com",
+			CNAME:  "dead.s3.amazonaws.com",
+			Rcode:  mdns.RcodeSuccess,
+		},
+	}}
+
+	opts := &GlobalOptions{
+		Domain: "test.example.com",
+		Format: "sarif",
+	}
+
+	var buf bytes.Buffer
+	if err := runScan(context.Background(), opts, &config.Config{}, &buf, mock); err != nil {
+		t.Fatalf("runScan: %v", err)
+	}
+
+	// Proves the sarif format is routed to the SARIF reporter (previously it
+	// fell through to text). Top-level version + a run with results.
+	var probe struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Results []struct {
+				RuleID string `json:"ruleId"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &probe); err != nil {
+		t.Fatalf("output is not SARIF JSON: %v\n%s", err, buf.String())
+	}
+	if probe.Version != "2.1.0" {
+		t.Errorf("version: want 2.1.0, got %q", probe.Version)
+	}
+	if len(probe.Runs) != 1 || len(probe.Runs[0].Results) == 0 {
+		t.Errorf("expected 1 run with results, got %+v", probe.Runs)
+	}
+}
+
 // Verify the Report type is exported and usable from test code.
 var _ = analyzer.Record{}

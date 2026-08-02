@@ -147,6 +147,8 @@ func runScan(ctx context.Context, opts *GlobalOptions, cfg *config.Config, w io.
 	switch opts.Format {
 	case "json", "spectrehub":
 		return report.WriteJSON(w, zoneName, findings)
+	case "sarif":
+		return report.WriteSARIF(w, zoneName, findings)
 	default:
 		return report.WriteText(w, zoneName, findings)
 	}
