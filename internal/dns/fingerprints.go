@@ -1,14 +1,22 @@
 package dns
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // Fingerprint describes a service susceptible to subdomain takeover.
+// The yaml tags also define the on-disk schema for custom fingerprint files
+// loaded by LoadFingerprints.
 type Fingerprint struct {
-	Service      string   // human-readable service name
-	CNAMEs       []string // CNAME substrings that identify this service
-	StatusCodes  []int    // HTTP status codes indicating unclaimed resource
-	BodyPatterns []string // substrings in HTTP response body
-	NXDomain     bool     // NXDOMAIN on CNAME target also indicates vulnerability
+	Service      string   `yaml:"service"`       // human-readable service name
+	CNAMEs       []string `yaml:"cnames"`        // CNAME substrings that identify this service
+	StatusCodes  []int    `yaml:"status_codes"`  // HTTP status codes indicating unclaimed resource
+	BodyPatterns []string `yaml:"body_patterns"` // substrings in HTTP response body
+	NXDomain     bool     `yaml:"nxdomain"`      // NXDOMAIN on CNAME target also indicates vulnerability
 }
 
 // BuiltinFingerprints returns the default fingerprint database.
@@ -145,4 +153,20 @@ func MatchCNAME(cname string, fingerprints []Fingerprint) []Fingerprint {
 		}
 	}
 	return matches
+}
+
+// LoadFingerprints reads custom fingerprints from a YAML file. The file is a
+// YAML list of entries with keys: service, cnames, status_codes, body_patterns,
+// nxdomain (see Fingerprint). A missing/unreadable file returns an error so a
+// typo'd --fingerprints path is not silently ignored.
+func LoadFingerprints(path string) ([]Fingerprint, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var fps []Fingerprint
+	if err := yaml.Unmarshal(data, &fps); err != nil {
+		return nil, fmt.Errorf("parse fingerprints %s: %w", path, err)
+	}
+	return fps, nil
 }

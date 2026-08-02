@@ -75,8 +75,9 @@ func validateScanFlags(opts *GlobalOptions) error {
 // whose flag was not explicitly set on the command line. Precedence is:
 // explicit flag > config file > builtin flag default. Using Flags().Changed
 // (rather than comparing against the default value) means an explicit flag
-// still wins even when it happens to equal its default. Excludes fingerprints
-// (owned by the fingerprints-loader path) and provider credentials (env>config).
+// still wins even when it happens to equal its default. The fingerprints value
+// is the file PATH only; the file itself is loaded in runScan. Provider
+// credentials keep their own env>config precedence.
 func resolveOptions(cmd *cobra.Command, opts *GlobalOptions, cfg *config.Config) error {
 	flags := cmd.Flags()
 	if !flags.Changed("platform") && cfg.Platform != "" {
@@ -98,6 +99,9 @@ func resolveOptions(cmd *cobra.Command, opts *GlobalOptions, cfg *config.Config)
 		}
 		opts.Timeout = d
 	}
+	if !flags.Changed("fingerprints") && cfg.Fingerprints != "" {
+		opts.Fingerprints = cfg.Fingerprints
+	}
 	return nil
 }
 
@@ -116,7 +120,10 @@ func runScan(ctx context.Context, opts *GlobalOptions, cfg *config.Config, w io.
 		resolver = r
 	}
 
-	fingerprints := dns.BuiltinFingerprints()
+	fingerprints, err := loadFingerprints(opts.Fingerprints)
+	if err != nil {
+		return fmt.Errorf("load fingerprints: %w", err)
+	}
 
 	var zoneName string
 	var records []analyzer.Record
@@ -143,6 +150,22 @@ func runScan(ctx context.Context, opts *GlobalOptions, cfg *config.Config, w io.
 	default:
 		return report.WriteText(w, zoneName, findings)
 	}
+}
+
+// loadFingerprints returns the builtin fingerprint database, optionally merged
+// with entries from a custom file at path (builtins first, then custom, so user
+// entries add to the set rather than replacing it). An empty path yields only
+// the builtins; a missing/invalid file returns an error.
+func loadFingerprints(path string) ([]dns.Fingerprint, error) {
+	builtins := dns.BuiltinFingerprints()
+	if path == "" {
+		return builtins, nil
+	}
+	custom, err := dns.LoadFingerprints(path)
+	if err != nil {
+		return nil, err
+	}
+	return append(builtins, custom...), nil
 }
 
 // dnsQueryRecords queries CNAME, MX, NS, CAA for a single domain.

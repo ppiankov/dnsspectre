@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -396,6 +398,69 @@ func TestResolveOptions_InvalidTimeout(t *testing.T) {
 	cfg := &config.Config{Timeout: "not-a-duration"}
 	if err := resolveOptions(cmd, opts, cfg); err == nil {
 		t.Fatal("expected error for invalid config timeout, got nil")
+	}
+}
+
+func TestResolveOptions_FingerprintsPath(t *testing.T) {
+	// config-provided fingerprints path flows in when the flag is not set.
+	cmd, opts := NewRootCmd(VersionInfo{})
+	cfg := &config.Config{Fingerprints: "/etc/dnsspectre/fps.yaml"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Fingerprints != "/etc/dnsspectre/fps.yaml" {
+		t.Errorf("fingerprints: want config path, got %q", opts.Fingerprints)
+	}
+
+	// explicit flag beats config.
+	cmd2, opts2 := NewRootCmd(VersionInfo{})
+	if err := cmd2.ParseFlags([]string{"--fingerprints", "/flag/fps.yaml"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if err := resolveOptions(cmd2, opts2, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts2.Fingerprints != "/flag/fps.yaml" {
+		t.Errorf("fingerprints: want flag path, got %q", opts2.Fingerprints)
+	}
+}
+
+func TestScanCustomFingerprints_TakesEffect(t *testing.T) {
+	// Custom fingerprint for a CNAME that no builtin matches.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.yaml")
+	custom := "- service: Custom CDN\n  cnames: [\".customcdn.example\"]\n  status_codes: [404]\n  nxdomain: true\n"
+	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &mockResolver{responses: map[string]*dns.Result{
+		"takeover.example.com:CNAME": {
+			Domain: "takeover.example.com",
+			CNAME:  "dead.customcdn.example",
+			Rcode:  mdns.RcodeSuccess,
+		},
+		// ResolveA("dead.customcdn.example") is absent from the map, so the
+		// mock returns NXDOMAIN, which the analyzer treats as claimable.
+	}}
+
+	opts := &GlobalOptions{
+		Domain:       "takeover.example.com",
+		Format:       "text",
+		Fingerprints: path,
+	}
+
+	var buf bytes.Buffer
+	if err := runScan(context.Background(), opts, &config.Config{}, &buf, mock); err != nil {
+		t.Fatalf("runScan: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "SUBDOMAIN_TAKEOVER_RISK") {
+		t.Errorf("expected takeover finding via custom fingerprint:\n%s", out)
+	}
+	if !strings.Contains(out, "Custom CDN") {
+		t.Errorf("expected Custom CDN service in detail:\n%s", out)
 	}
 }
 
