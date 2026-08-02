@@ -28,7 +28,10 @@ that could lead to subdomain takeover.
 
 Requires either --domain (DNS query mode) or --platform
 (platform enumeration mode). When using --platform, --zone is optional;
-omit it to scan all zones.`,
+omit it to scan all zones.
+
+Options not set on the command line fall back to .dnsspectre.yaml; pass an
+explicit empty value (e.g. --domain "") to clear a config value.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := config.Load(".dnsspectre.yaml")
 			if err != nil {
@@ -77,7 +80,9 @@ func validateScanFlags(opts *GlobalOptions) error {
 // (rather than comparing against the default value) means an explicit flag
 // still wins even when it happens to equal its default. The fingerprints value
 // is the file PATH only; the file itself is loaded in runScan. Provider
-// credentials keep their own env>config precedence.
+// credentials keep their own env>config precedence. An explicit empty value
+// (e.g. --domain "") marks the flag changed and so clears a config value,
+// letting the user select the other scan mode.
 func resolveOptions(cmd *cobra.Command, opts *GlobalOptions, cfg *config.Config) error {
 	flags := cmd.Flags()
 	if !flags.Changed("platform") && cfg.Platform != "" {
