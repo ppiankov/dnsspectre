@@ -1,10 +1,9 @@
 # dnsspectre
 
 [![CI](https://github.com/ppiankov/dnsspectre/actions/workflows/ci.yml/badge.svg)](https://github.com/ppiankov/dnsspectre/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ppiankov/dnsspectre)](https://goreportcard.com/report/github.com/ppiankov/dnsspectre)
 [![ANCC](https://img.shields.io/badge/ANCC-compliant-brightgreen)](https://ancc.dev)
 
-**dnsspectre** — DNS hygiene and subdomain takeover detection. Part of [SpectreHub](https://github.com/ppiankov/spectrehub).
+**dnsspectre** — DNS hygiene and subdomain takeover detection. Part of [SpectreHub](https://spectrehub.dev).
 
 ## What it is
 
@@ -68,7 +67,7 @@ dnsspectre scan --provider route53 --format json
 
 ## SpectreHub integration
 
-dnsspectre feeds DNS hygiene findings into [SpectreHub](https://github.com/ppiankov/spectrehub) for unified visibility across your infrastructure.
+dnsspectre feeds DNS hygiene findings into [SpectreHub](https://spectrehub.dev) for unified visibility across your infrastructure.
 
 ```sh
 spectrehub collect --tool dnsspectre

@@ -21,10 +21,10 @@ go install github.com/ppiankov/dnsspectre/cmd/dnsspectre@latest
 Scans DNS zones for security findings.
 
 **Flags:**
-- `--format json` — output as JSON (ANCC standard, alias for --output json)
-- `--output json` — output as JSON (spectre/v1 envelope)
-- `--output sarif` — SARIF format for CI integration
-- `--output spectrehub` — SpectreHub aggregator format
+- `--format text` — human-readable text output (default)
+- `--format json` — spectre/v1 JSON envelope
+- `--format sarif` — SARIF 2.1.0 for CI integration
+- `--format spectrehub` — SpectreHub aggregator format
 - `--baseline path` — suppress known findings
 
 **JSON output:**
@@ -86,8 +86,8 @@ Initialize configuration with sensible defaults.
 ## Parsing examples
 
 ```bash
-dnsspectre scan --output json | jq '.summary'
-dnsspectre scan --output json | jq '.findings[] | select(.severity == "critical")'
+dnsspectre scan --format json | jq '.summary'
+dnsspectre scan --format json | jq '.findings[] | select(.severity == "critical")'
 ```
 
 ---
