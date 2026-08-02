@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/ppiankov/dnsspectre/internal/report"
 )
 
+// WO-15: scan command wires config-file defaults with flag>config precedence.
 func newScanCmd(opts *GlobalOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "scan",
@@ -29,11 +31,28 @@ Requires either --domain (DNS query mode) or --platform
 (platform enumeration mode). When using --platform, --zone is optional;
 omit it to scan all zones.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// WO-15: load config and apply its values as defaults for unset flags.
+			cfg, err := config.Load(".dnsspectre.yaml")
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			if err := resolveOptions(cmd, opts, cfg); err != nil {
+				return err
+			}
+			// Re-validate after config defaults are applied: the root
+			// PersistentPreRunE ran against flag values before config-derived
+			// platform/format were filled in.
+			if err := ValidatePlatform(opts.Platform); err != nil {
+				return err
+			}
+			if err := ValidateFormat(opts.Format); err != nil {
+				return err
+			}
 			if err := validateScanFlags(opts); err != nil {
 				return err
 			}
-			ctx := cmd.Context()
-			return runScan(ctx, opts, cmd.OutOrStdout(), nil)
+			// WO-15: pass the loaded config into runScan for provider credentials.
+			return runScan(cmd.Context(), opts, cfg, cmd.OutOrStdout(), nil)
 		},
 	}
 }
@@ -55,14 +74,48 @@ func validateScanFlags(opts *GlobalOptions) error {
 	return nil
 }
 
-// runScan orchestrates: config → resolver → records → analyze → report.
-// resolverOverride allows tests to inject a mock resolver.
-func runScan(ctx context.Context, opts *GlobalOptions, w io.Writer, resolverOverride dns.Resolver) error {
-	cfg, err := config.Load(".dnsspectre.yaml")
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+// WO-15: resolveOptions applies config-file defaults for unset scan flags.
+// resolveOptions applies config-file values as defaults for any scan option
+// whose flag was not explicitly set on the command line. Precedence is:
+// explicit flag > config file > builtin flag default. Using Flags().Changed
+// (rather than comparing against the default value) means an explicit flag
+// still wins even when it happens to equal its default. The fingerprints value
+// is the file PATH only; the file itself is loaded in runScan. Provider
+// credentials keep their own env>config precedence. An explicit empty value
+// (e.g. --domain "") marks the flag changed and so clears a config value,
+// letting the user select the other scan mode.
+func resolveOptions(cmd *cobra.Command, opts *GlobalOptions, cfg *config.Config) error {
+	flags := cmd.Flags()
+	if !flags.Changed("platform") && cfg.Platform != "" {
+		opts.Platform = cfg.Platform
 	}
+	if !flags.Changed("domain") && cfg.Domain != "" {
+		opts.Domain = cfg.Domain
+	}
+	if !flags.Changed("zone") && cfg.Zone != "" {
+		opts.Zone = cfg.Zone
+	}
+	if !flags.Changed("format") && cfg.Format != "" {
+		opts.Format = cfg.Format
+	}
+	if !flags.Changed("timeout") && cfg.Timeout != "" {
+		d, err := time.ParseDuration(cfg.Timeout)
+		if err != nil {
+			return fmt.Errorf("invalid config timeout %q: %w", cfg.Timeout, err)
+		}
+		opts.Timeout = d
+	}
+	if !flags.Changed("fingerprints") && cfg.Fingerprints != "" {
+		opts.Fingerprints = cfg.Fingerprints
+	}
+	return nil
+}
 
+// WO-15: runScan takes the loaded config so provider scanners get credentials.
+// runScan orchestrates: resolver → records → analyze → report.
+// resolverOverride allows tests to inject a mock resolver.
+func runScan(ctx context.Context, opts *GlobalOptions, cfg *config.Config, w io.Writer, resolverOverride dns.Resolver) error {
+	var err error
 	var resolver dns.Resolver
 	if resolverOverride != nil {
 		resolver = resolverOverride
@@ -74,7 +127,11 @@ func runScan(ctx context.Context, opts *GlobalOptions, w io.Writer, resolverOver
 		resolver = r
 	}
 
-	fingerprints := dns.BuiltinFingerprints()
+	// WO-19: load builtin + optional custom fingerprints before analysis.
+	fingerprints, err := loadFingerprints(opts.Fingerprints)
+	if err != nil {
+		return fmt.Errorf("load fingerprints: %w", err)
+	}
 
 	var zoneName string
 	var records []analyzer.Record
@@ -95,12 +152,32 @@ func runScan(ctx context.Context, opts *GlobalOptions, w io.Writer, resolverOver
 		return fmt.Errorf("analyze: %w", err)
 	}
 
+	// WO-16: route sarif format to the SARIF reporter (previously fell through to text).
 	switch opts.Format {
 	case "json", "spectrehub":
 		return report.WriteJSON(w, zoneName, findings)
+	case "sarif":
+		return report.WriteSARIF(w, zoneName, findings)
 	default:
 		return report.WriteText(w, zoneName, findings)
 	}
+}
+
+// WO-19: loadFingerprints merges builtin and custom fingerprint databases by path.
+// loadFingerprints returns the builtin fingerprint database, optionally merged
+// with entries from a custom file at path (builtins first, then custom, so user
+// entries add to the set rather than replacing it). An empty path yields only
+// the builtins; a missing/invalid file returns an error.
+func loadFingerprints(path string) ([]dns.Fingerprint, error) {
+	builtins := dns.BuiltinFingerprints()
+	if path == "" {
+		return builtins, nil
+	}
+	custom, err := dns.LoadFingerprints(path)
+	if err != nil {
+		return nil, err
+	}
+	return append(builtins, custom...), nil
 }
 
 // dnsQueryRecords queries CNAME, MX, NS, CAA for a single domain.
@@ -305,34 +382,42 @@ func cloudflareRecords(ctx context.Context, opts *GlobalOptions, cfg *config.Con
 	return "cloudflare", all, nil
 }
 
-func convertAWSRecords(records []aws.Record) []analyzer.Record {
+// WO-18: convertRecords is the shared generic converter all providers delegate to.
+// convertRecords maps a slice of provider records into analyzer records using
+// toRecord. Every provider scanner shares this loop; only the per-type field
+// mapping differs, supplied as a closure by each wrapper below.
+func convertRecords[T any](records []T, toRecord func(T) analyzer.Record) []analyzer.Record {
 	out := make([]analyzer.Record, len(records))
 	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+		out[i] = toRecord(r)
 	}
 	return out
+}
+
+func convertAWSRecords(records []aws.Record) []analyzer.Record {
+	// WO-18: delegate to the shared generic converter.
+	return convertRecords(records, func(r aws.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
 
 func convertGCPRecords(records []gcp.Record) []analyzer.Record {
-	out := make([]analyzer.Record, len(records))
-	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
-	}
-	return out
+	// WO-18: delegate to the shared generic converter.
+	return convertRecords(records, func(r gcp.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
 
 func convertAzureRecords(records []azure.Record) []analyzer.Record {
-	out := make([]analyzer.Record, len(records))
-	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
-	}
-	return out
+	// WO-18: delegate to the shared generic converter.
+	return convertRecords(records, func(r azure.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }
 
 func convertCloudflareRecords(records []cloudflare.Record) []analyzer.Record {
-	out := make([]analyzer.Record, len(records))
-	for i, r := range records {
-		out[i] = analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
-	}
-	return out
+	// WO-18: delegate to the shared generic converter.
+	return convertRecords(records, func(r cloudflare.Record) analyzer.Record {
+		return analyzer.Record{Name: r.Name, Type: r.Type, Values: r.Values, TTL: r.TTL}
+	})
 }

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	mdns "github.com/miekg/dns"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/ppiankov/dnsspectre/internal/aws"
 	"github.com/ppiankov/dnsspectre/internal/azure"
 	cfpkg "github.com/ppiankov/dnsspectre/internal/cloudflare"
+	"github.com/ppiankov/dnsspectre/internal/config"
 	"github.com/ppiankov/dnsspectre/internal/dns"
 	"github.com/ppiankov/dnsspectre/internal/gcp"
 	"github.com/ppiankov/dnsspectre/internal/report"
@@ -161,7 +165,8 @@ func TestScanDomainMode_TextOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := runScan(context.Background(), opts, &buf, mock)
+	// WO-15: runScan now requires the loaded config (here an empty default).
+	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
 	}
@@ -201,7 +206,8 @@ func TestScanDomainMode_JSONOutput(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := runScan(context.Background(), opts, &buf, mock)
+	// WO-15: runScan now requires the loaded config (here an empty default).
+	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
 	}
@@ -240,7 +246,8 @@ func TestScanDomainMode_NoFindings(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := runScan(context.Background(), opts, &buf, mock)
+	// WO-15: runScan now requires the loaded config (here an empty default).
+	err := runScan(context.Background(), opts, &config.Config{}, &buf, mock)
 	if err != nil {
 		t.Fatalf("runScan error: %v", err)
 	}
@@ -354,6 +361,172 @@ func TestDnsQueryRecords_NoCNAME(t *testing.T) {
 		if r.Type == "CNAME" {
 			t.Error("should not produce CNAME record when resolver returns empty CNAME")
 		}
+	}
+}
+
+// WO-15: config-file values fill in scan flags that were not set explicitly.
+func TestResolveOptions_ConfigProvidesDefaults(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	cfg := &config.Config{Domain: "cfg.example.com", Format: "json", Timeout: "15s"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Domain != "cfg.example.com" {
+		t.Errorf("domain: want cfg.example.com, got %q", opts.Domain)
+	}
+	if opts.Format != "json" {
+		t.Errorf("format: want json, got %q", opts.Format)
+	}
+	if opts.Timeout != 15*time.Second {
+		t.Errorf("timeout: want 15s, got %v", opts.Timeout)
+	}
+}
+
+// WO-15: an explicit flag beats the config-file value (flag > config > builtin).
+func TestResolveOptions_ExplicitFlagBeatsConfig(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	// Simulate `--domain flag.example.com` passed on the command line.
+	if err := cmd.ParseFlags([]string{"--domain", "flag.example.com"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	cfg := &config.Config{Domain: "cfg.example.com"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Domain != "flag.example.com" {
+		t.Errorf("domain: want flag.example.com (explicit flag beats config), got %q", opts.Domain)
+	}
+}
+
+// WO-15: an invalid config timeout is rejected with an error.
+func TestResolveOptions_InvalidTimeout(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	cfg := &config.Config{Timeout: "not-a-duration"}
+	if err := resolveOptions(cmd, opts, cfg); err == nil {
+		t.Fatal("expected error for invalid config timeout, got nil")
+	}
+}
+
+// WO-19: the config-provided fingerprints path flows into opts when the flag is unset.
+func TestResolveOptions_FingerprintsPath(t *testing.T) {
+	// config-provided fingerprints path flows in when the flag is not set.
+	cmd, opts := NewRootCmd(VersionInfo{})
+	cfg := &config.Config{Fingerprints: "/etc/dnsspectre/fps.yaml"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Fingerprints != "/etc/dnsspectre/fps.yaml" {
+		t.Errorf("fingerprints: want config path, got %q", opts.Fingerprints)
+	}
+
+	// explicit flag beats config.
+	cmd2, opts2 := NewRootCmd(VersionInfo{})
+	if err := cmd2.ParseFlags([]string{"--fingerprints", "/flag/fps.yaml"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if err := resolveOptions(cmd2, opts2, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts2.Fingerprints != "/flag/fps.yaml" {
+		t.Errorf("fingerprints: want flag path, got %q", opts2.Fingerprints)
+	}
+}
+
+// WO-19: a custom fingerprints file is loaded and takes effect during scan.
+func TestScanCustomFingerprints_TakesEffect(t *testing.T) {
+	// Custom fingerprint for a CNAME that no builtin matches.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.yaml")
+	custom := "- service: Custom CDN\n  cnames: [\".customcdn.example\"]\n  status_codes: [404]\n  nxdomain: true\n"
+	if err := os.WriteFile(path, []byte(custom), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &mockResolver{responses: map[string]*dns.Result{
+		"takeover.example.com:CNAME": {
+			Domain: "takeover.example.com",
+			CNAME:  "dead.customcdn.example",
+			Rcode:  mdns.RcodeSuccess,
+		},
+		// ResolveA("dead.customcdn.example") is absent from the map, so the
+		// mock returns NXDOMAIN, which the analyzer treats as claimable.
+	}}
+
+	opts := &GlobalOptions{
+		Domain:       "takeover.example.com",
+		Format:       "text",
+		Fingerprints: path,
+	}
+
+	var buf bytes.Buffer
+	if err := runScan(context.Background(), opts, &config.Config{}, &buf, mock); err != nil {
+		t.Fatalf("runScan: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "SUBDOMAIN_TAKEOVER_RISK") {
+		t.Errorf("expected takeover finding via custom fingerprint:\n%s", out)
+	}
+	if !strings.Contains(out, "Custom CDN") {
+		t.Errorf("expected Custom CDN service in detail:\n%s", out)
+	}
+}
+
+// WO-16: sarif format is routed to the SARIF reporter, not text.
+func TestScanDomainMode_SARIFOutput(t *testing.T) {
+	mock := &mockResolver{responses: map[string]*dns.Result{
+		"test.example.com:CNAME": {
+			Domain: "test.example.com",
+			CNAME:  "dead.s3.amazonaws.com",
+			Rcode:  mdns.RcodeSuccess,
+		},
+	}}
+
+	opts := &GlobalOptions{
+		Domain: "test.example.com",
+		Format: "sarif",
+	}
+
+	var buf bytes.Buffer
+	if err := runScan(context.Background(), opts, &config.Config{}, &buf, mock); err != nil {
+		t.Fatalf("runScan: %v", err)
+	}
+
+	// Proves the sarif format is routed to the SARIF reporter (previously it
+	// fell through to text). Top-level version + a run with results.
+	var probe struct {
+		Version string `json:"version"`
+		Runs    []struct {
+			Results []struct {
+				RuleID string `json:"ruleId"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(buf.Bytes(), &probe); err != nil {
+		t.Fatalf("output is not SARIF JSON: %v\n%s", err, buf.String())
+	}
+	if probe.Version != "2.1.0" {
+		t.Errorf("version: want 2.1.0, got %q", probe.Version)
+	}
+	if len(probe.Runs) != 1 || len(probe.Runs[0].Results) == 0 {
+		t.Errorf("expected 1 run with results, got %+v", probe.Runs)
+	}
+}
+
+// WO-27: an explicit empty flag value clears a config-provided value.
+func TestResolveOptions_EmptyFlagClearsConfig(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	// An explicit empty --domain marks the flag changed, so the config value
+	// must NOT be applied — letting the user pick --platform mode instead.
+	if err := cmd.ParseFlags([]string{"--domain", ""}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	cfg := &config.Config{Domain: "cfg.example.com"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Domain != "" {
+		t.Errorf("domain: want \"\" (explicit empty clears config), got %q", opts.Domain)
 	}
 }
 

@@ -355,3 +355,31 @@ func TestParseMXHost(t *testing.T) {
 		}
 	}
 }
+
+// WO-20: overlapping fingerprints must yield one takeover finding, not duplicates.
+func TestAnalyze_TakeoverDedupOnOverlap(t *testing.T) {
+	mock := &mockResolver{responses: map[string]*dns.Result{}}
+	// Two fingerprints whose CNAME patterns overlap the same target.
+	fps := []dns.Fingerprint{
+		{Service: "AWS S3", CNAMEs: []string{".s3.amazonaws.com"}, NXDomain: true},
+		{Service: "Custom S3", CNAMEs: []string{".s3.amazonaws.com"}, NXDomain: true},
+	}
+	a := New(mock, fps)
+	records := []Record{
+		{Name: "cdn.example.com", Type: "CNAME", Values: []string{"old.s3.amazonaws.com"}},
+		{Name: "cdn.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected exactly 1 finding (deduped), got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Type != SubdomainTakeoverRisk {
+		t.Errorf("expected takeover, got %s", findings[0].Type)
+	}
+	if findings[0].Service != "AWS S3" {
+		t.Errorf("expected first-matched service AWS S3, got %s", findings[0].Service)
+	}
+}

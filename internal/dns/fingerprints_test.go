@@ -1,6 +1,10 @@
 package dns
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestBuiltinFingerprints_Count(t *testing.T) {
 	fps := BuiltinFingerprints()
@@ -93,5 +97,68 @@ func TestMatchCNAME_Heroku(t *testing.T) {
 	}
 	if matches[0].Service != "Heroku" {
 		t.Errorf("expected Heroku, got %s", matches[0].Service)
+	}
+}
+
+// WO-19: a valid custom fingerprint YAML file loads into Fingerprint entries.
+func TestLoadFingerprints(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.yaml")
+	content := `- service: Custom CDN
+  cnames: [".customcdn.example"]
+  status_codes: [404]
+  body_patterns: ["no such site"]
+  nxdomain: true
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fps, err := LoadFingerprints(path)
+	if err != nil {
+		t.Fatalf("LoadFingerprints: %v", err)
+	}
+	if len(fps) != 1 {
+		t.Fatalf("want 1 fingerprint, got %d", len(fps))
+	}
+	if fps[0].Service != "Custom CDN" {
+		t.Errorf("service: want Custom CDN, got %q", fps[0].Service)
+	}
+	if len(fps[0].CNAMEs) != 1 || fps[0].CNAMEs[0] != ".customcdn.example" {
+		t.Errorf("cnames: want [.customcdn.example], got %v", fps[0].CNAMEs)
+	}
+	if !fps[0].NXDomain {
+		t.Error("nxdomain: want true")
+	}
+}
+
+// WO-19: a missing fingerprints file returns an error rather than being ignored.
+func TestLoadFingerprints_MissingFile(t *testing.T) {
+	if _, err := LoadFingerprints(filepath.Join(t.TempDir(), "absent.yaml")); err == nil {
+		t.Fatal("expected error for missing file, got nil")
+	}
+}
+
+// WO-19: invalid YAML in a fingerprints file returns a parse error.
+func TestLoadFingerprints_InvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	if err := os.WriteFile(path, []byte(":\n  - [unclosed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFingerprints(path); err == nil {
+		t.Fatal("expected error for invalid YAML, got nil")
+	}
+}
+
+// WO-26: an empty cname pattern is rejected so it cannot match every target.
+func TestLoadFingerprints_RejectsEmptyPattern(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.yaml")
+	content := "- service: Broken\n  cnames: [\"\"]\n  status_codes: [404]\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFingerprints(path); err == nil {
+		t.Fatal("expected error for empty cname pattern, got nil")
 	}
 }
