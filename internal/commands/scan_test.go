@@ -504,5 +504,21 @@ func TestScanDomainMode_SARIFOutput(t *testing.T) {
 	}
 }
 
+func TestResolveOptions_EmptyFlagClearsConfig(t *testing.T) {
+	cmd, opts := NewRootCmd(VersionInfo{})
+	// An explicit empty --domain marks the flag changed, so the config value
+	// must NOT be applied — letting the user pick --platform mode instead.
+	if err := cmd.ParseFlags([]string{"--domain", ""}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	cfg := &config.Config{Domain: "cfg.example.com"}
+	if err := resolveOptions(cmd, opts, cfg); err != nil {
+		t.Fatalf("resolveOptions: %v", err)
+	}
+	if opts.Domain != "" {
+		t.Errorf("domain: want \"\" (explicit empty clears config), got %q", opts.Domain)
+	}
+}
+
 // Verify the Report type is exported and usable from test code.
 var _ = analyzer.Record{}
