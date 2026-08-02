@@ -41,7 +41,7 @@ dnsspectre scan [flags]
 | `--domain` | | Domain for direct DNS query mode |
 | `--platform` | | Cloud platform: `aws`, `gcp`, `azure`, `cloudflare` |
 | `--zone` | | Zone ID for platform mode (omit to scan all zones) |
-| `--format` | `text` | Output format: `text`, `json`, `spectrehub` |
+| `--format` | `text` | Output format: `text`, `json`, `sarif`, `spectrehub` |
 | `--timeout` | `5s` | DNS resolution timeout |
 | `--fingerprints` | | Path to custom fingerprints file |
 
@@ -110,6 +110,8 @@ Generate a sample config with `dnsspectre init`.
 
 **SpectreHub** (`--format spectrehub`): `spectre/v1` envelope for SpectreHub ingestion.
 
+**SARIF** (`--format sarif`): SARIF 2.1.0 log for CI/security-tool integration (GitHub code scanning, SonarQube, etc.). Maps each analyzer finding to a result keyed by finding type, levelled by severity, located at its scanned domain.
+
 
 ## Architecture
 
@@ -142,7 +144,7 @@ Key design decisions:
 
 ## Project status
 
-**Status: Beta** · **v0.1.0** · Pre-1.0
+**Status: Beta** · **v0.2.0** · Pre-1.0
 
 | Milestone | Status |
 |-----------|--------|
@@ -150,12 +152,12 @@ Key design decisions:
 | Direct DNS query mode | Complete |
 | 5 finding types (takeover, dangling CNAME/NS/MX, missing CAA) | Complete |
 | 17 service fingerprints for takeover detection | Complete |
-| 3 output formats (text, JSON, SpectreHub) | Complete |
+| 4 output formats (text, JSON, SARIF, SpectreHub) | Complete |
 | Config file + init command | Complete |
 | CI pipeline (test/lint/build) | Complete |
 | Homebrew distribution | Complete |
 | Test coverage >85% | Complete |
-| SARIF output | Planned |
+| SARIF output | Complete |
 | v1.0 release | Planned |
 
 Pre-1.0: CLI flags and config schemas may change between minor versions. JSON output structure (`spectre/v1`) is stable.
