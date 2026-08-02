@@ -57,7 +57,10 @@ func (a *Analyzer) checkCNAME(ctx context.Context, rec Record) []Finding {
 			continue
 		}
 
-		// NXDOMAIN — check if it matches a claimable service fingerprint
+		// NXDOMAIN — check if it matches a claimable service fingerprint.
+		// Report at most one takeover per CNAME target (the first matched
+		// service) so overlapping custom+builtin fingerprints cannot inflate
+		// the count with duplicate findings.
 		matched := dns.MatchCNAME(target, a.fingerprints)
 		hasTakeover := false
 		for _, fp := range matched {
@@ -72,6 +75,7 @@ func (a *Analyzer) checkCNAME(ctx context.Context, rec Record) []Finding {
 					Service:  fp.Service,
 					Detail:   fmt.Sprintf("CNAME %s points to %s (%s) which returns NXDOMAIN and is claimable", rec.Name, target, fp.Service),
 				})
+				break
 			}
 		}
 
