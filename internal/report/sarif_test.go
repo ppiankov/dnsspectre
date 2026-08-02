@@ -62,8 +62,8 @@ func TestWriteSARIF(t *testing.T) {
 	if r0.Message.Text == "" {
 		t.Error("message text is empty")
 	}
-	if len(r0.Locations) != 1 || r0.Locations[0].PhysicalLocation.ArtifactLocation.URI != "a.example.com" {
-		t.Errorf("location uri: want a.example.com, got %+v", r0.Locations)
+	if len(r0.LogicalLocations) != 1 || r0.LogicalLocations[0].Kind != "domain" || r0.LogicalLocations[0].Name != "a.example.com" {
+		t.Errorf("logicalLocation: want kind=domain name=a.example.com, got %+v", r0.LogicalLocations)
 	}
 
 	if run.Results[1].Level != "note" {

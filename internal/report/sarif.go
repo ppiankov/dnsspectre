@@ -41,26 +41,22 @@ type sarifRule struct {
 }
 
 type sarifResult struct {
-	RuleID    string          `json:"ruleId"`
-	Level     string          `json:"level"`
-	Message   sarifMessage    `json:"message"`
-	Locations []sarifLocation `json:"locations,omitempty"`
+	RuleID           string                 `json:"ruleId"`
+	Level            string                 `json:"level"`
+	Message          sarifMessage           `json:"message"`
+	LogicalLocations []sarifLogicalLocation `json:"logicalLocations,omitempty"`
 }
 
 type sarifMessage struct {
 	Text string `json:"text"`
 }
 
-type sarifLocation struct {
-	PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
-}
-
-type sarifPhysicalLocation struct {
-	ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
-}
-
-type sarifArtifactLocation struct {
-	URI string `json:"uri"`
+// sarifLogicalLocation models the scanned DNS domain. A domain is not a file
+// artifact, so it is represented as a logical location (SARIF §3.28) rather
+// than a physical artifactLocation.
+type sarifLogicalLocation struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
 }
 
 // severityToSarifLevel maps dnsspectre severity to a SARIF result.level.
@@ -75,7 +71,8 @@ var severityToSarifLevel = map[analyzer.Severity]string{
 
 // WriteSARIF writes findings as a SARIF 2.1.0 log. Each finding becomes a
 // result keyed by its finding type (ruleId), levelled by severity, and located
-// at its domain. Empty findings yield a valid run with no results.
+// at its domain (as a logical location). Empty findings yield a valid run with
+// no results.
 func WriteSARIF(w io.Writer, zoneName string, findings []analyzer.Finding) error {
 	rules := make([]sarifRule, 0, len(findings))
 	seen := make(map[string]bool, len(findings))
@@ -97,19 +94,18 @@ func WriteSARIF(w io.Writer, zoneName string, findings []analyzer.Finding) error
 			level = "warning"
 		}
 
-		uri := f.Domain
-		if uri == "" {
-			uri = zoneName
+		name := f.Domain
+		if name == "" {
+			name = zoneName
 		}
 
 		results = append(results, sarifResult{
 			RuleID:  ruleID,
 			Level:   level,
 			Message: sarifMessage{Text: f.Detail},
-			Locations: []sarifLocation{{
-				PhysicalLocation: sarifPhysicalLocation{
-					ArtifactLocation: sarifArtifactLocation{URI: uri},
-				},
+			LogicalLocations: []sarifLogicalLocation{{
+				Kind: "domain",
+				Name: name,
 			}},
 		})
 	}
