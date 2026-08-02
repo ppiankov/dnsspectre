@@ -1,0 +1,6 @@
+# Force LF line endings for text test fixtures. Golden-file tests compare
+# byte-for-byte against these files; Windows checkouts with core.autocrlf=true
+# would otherwise get CRLF and fail the comparison.
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
