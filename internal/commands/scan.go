@@ -148,7 +148,7 @@ func runScan(ctx context.Context, opts *GlobalOptions, cfg *config.Config, w io.
 		}
 	}
 
-	a := analyzer.New(resolver, fingerprints)
+	a := analyzer.New(resolver, fingerprints, dns.NewChecker(nil))
 	findings, err := a.Analyze(ctx, records)
 	if err != nil {
 		return fmt.Errorf("analyze: %w", err)

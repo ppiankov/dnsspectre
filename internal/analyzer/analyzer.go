@@ -12,13 +12,17 @@ import (
 type Analyzer struct {
 	resolver     dns.Resolver
 	fingerprints []dns.Fingerprint
+	checker      *dns.Checker
 }
 
-// New creates an Analyzer with the given resolver and fingerprint database.
-func New(resolver dns.Resolver, fingerprints []dns.Fingerprint) *Analyzer {
+// New creates an Analyzer with the given resolver, fingerprint database, and
+// optional HTTP checker for non-NXDomain fingerprint verification. Pass nil
+// for checker to skip HTTP-based takeover detection.
+func New(resolver dns.Resolver, fingerprints []dns.Fingerprint, checker *dns.Checker) *Analyzer {
 	return &Analyzer{
 		resolver:     resolver,
 		fingerprints: fingerprints,
+		checker:      checker,
 	}
 }
 
@@ -53,34 +57,56 @@ func (a *Analyzer) checkCNAME(ctx context.Context, rec Record) []Finding {
 		if err != nil {
 			continue
 		}
-		if result.Rcode != 3 {
-			continue
-		}
 
-		// NXDOMAIN — check if it matches a claimable service fingerprint.
-		// Report at most one takeover per CNAME target (the first matched
-		// service) so overlapping custom+builtin fingerprints cannot inflate
-		// the count with duplicate findings.
 		matched := dns.MatchCNAME(target, a.fingerprints)
 		hasTakeover := false
-		for _, fp := range matched {
-			if fp.NXDomain {
-				hasTakeover = true
-				findings = append(findings, Finding{
-					Type:     SubdomainTakeoverRisk,
-					Severity: SeverityCritical,
-					Domain:   rec.Name,
-					Record:   rec,
-					Target:   target,
-					Service:  fp.Service,
-					Detail:   fmt.Sprintf("CNAME %s points to %s (%s) which returns NXDOMAIN and is claimable", rec.Name, target, fp.Service),
-				})
-				// WO-20: emit one takeover finding per CNAME target; break prevents overlapping fingerprints duplicating.
-				break
+
+		// WO-20: NXDOMAIN check — one takeover per CNAME target
+		if result.Rcode == 3 {
+			for _, fp := range matched {
+				if fp.NXDomain {
+					hasTakeover = true
+					findings = append(findings, Finding{
+						Type:     SubdomainTakeoverRisk,
+						Severity: SeverityCritical,
+						Domain:   rec.Name,
+						Record:   rec,
+						Target:   target,
+						Service:  fp.Service,
+						Detail:   fmt.Sprintf("CNAME %s points to %s (%s) which returns NXDOMAIN and is claimable", rec.Name, target, fp.Service),
+					})
+					break
+				}
 			}
 		}
 
-		if !hasTakeover {
+		// WO-33: HTTP-based check for non-NXDomain fingerprints
+		if !hasTakeover && a.checker != nil {
+			for _, fp := range matched {
+				if !fp.NXDomain {
+					url := fmt.Sprintf("https://%s", target)
+					checkResult, checkErr := a.checker.Check(ctx, url, []dns.Fingerprint{fp})
+					if checkErr != nil {
+						continue
+					}
+					if checkResult != nil && checkResult.Matched {
+						hasTakeover = true
+						findings = append(findings, Finding{
+							Type:     SubdomainTakeoverRisk,
+							Severity: SeverityCritical,
+							Domain:   rec.Name,
+							Record:   rec,
+							Target:   target,
+							Service:  fp.Service,
+							Detail:   fmt.Sprintf("CNAME %s points to %s (%s) which returns HTTP %d and is claimable", rec.Name, target, fp.Service, checkResult.StatusCode),
+						})
+						break
+					}
+				}
+			}
+		}
+
+		if !hasTakeover && result.Rcode == 3 {
 			findings = append(findings, Finding{
 				Type:     DanglingCNAME,
 				Severity: SeverityHigh,

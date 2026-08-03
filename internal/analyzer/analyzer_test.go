@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	mdns "github.com/miekg/dns"
@@ -50,7 +53,7 @@ func (m *mockResolver) ResolveCAA(_ context.Context, domain string) (*dns.Result
 }
 
 func TestNew(t *testing.T) {
-	a := New(&mockResolver{}, nil)
+	a := New(&mockResolver{}, nil, nil)
 	if a == nil {
 		t.Fatal("New returned nil")
 	}
@@ -59,7 +62,7 @@ func TestNew(t *testing.T) {
 func TestAnalyze_DanglingCNAME(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{}}
 	// "old.nxdomain.test" not in responses → defaults to NXDOMAIN
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "app.example.com", Type: "CNAME", Values: []string{"old.nxdomain.test"}},
 		{Name: "app.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -85,7 +88,7 @@ func TestAnalyze_DanglingCNAME(t *testing.T) {
 func TestAnalyze_SubdomainTakeoverRisk(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{}}
 	// "old.s3.amazonaws.com" not in responses → NXDOMAIN
-	a := New(mock, dns.BuiltinFingerprints())
+	a := New(mock, dns.BuiltinFingerprints(), nil)
 	records := []Record{
 		{Name: "cdn.example.com", Type: "CNAME", Values: []string{"old.s3.amazonaws.com"}},
 		{Name: "cdn.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -120,7 +123,7 @@ func TestAnalyze_FingerprintNoNXDomain(t *testing.T) {
 			NXDomain:     false,
 		},
 	}
-	a := New(mock, fps)
+	a := New(mock, fps, nil)
 	records := []Record{
 		{Name: "shop.example.com", Type: "CNAME", Values: []string{"old.myshopify.com"}},
 		{Name: "shop.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -143,7 +146,7 @@ func TestAnalyze_CNAMEResolves(t *testing.T) {
 			"live.example.com:A": {Domain: "live.example.com", Rcode: mdns.RcodeSuccess, IPs: []net.IP{net.ParseIP("1.2.3.4")}},
 		},
 	}
-	a := New(mock, dns.BuiltinFingerprints())
+	a := New(mock, dns.BuiltinFingerprints(), nil)
 	records := []Record{
 		{Name: "app.example.com", Type: "CNAME", Values: []string{"live.example.com"}},
 		{Name: "app.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -164,7 +167,7 @@ func TestAnalyze_CNAMEResolverError(t *testing.T) {
 			"broken.test:A": errors.New("network timeout"),
 		},
 	}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "app.example.com", Type: "CNAME", Values: []string{"broken.test"}},
 		{Name: "app.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -180,7 +183,7 @@ func TestAnalyze_CNAMEResolverError(t *testing.T) {
 
 func TestAnalyze_DanglingMX(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{}}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "MX", Values: []string{"10 mail.dead.test"}},
 		{Name: "example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -209,7 +212,7 @@ func TestAnalyze_MXResolves(t *testing.T) {
 			"mail.example.com:A": {Domain: "mail.example.com", Rcode: mdns.RcodeSuccess, IPs: []net.IP{net.ParseIP("5.6.7.8")}},
 		},
 	}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "MX", Values: []string{"10 mail.example.com"}},
 		{Name: "example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -225,7 +228,7 @@ func TestAnalyze_MXResolves(t *testing.T) {
 
 func TestAnalyze_DanglingNS(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{}}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "NS", Values: []string{"ns1.dead-provider.test"}},
 		{Name: "example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -251,7 +254,7 @@ func TestAnalyze_NSResolves(t *testing.T) {
 			"ns1.example.com:A": {Domain: "ns1.example.com", Rcode: mdns.RcodeSuccess, IPs: []net.IP{net.ParseIP("9.9.9.9")}},
 		},
 	}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "NS", Values: []string{"ns1.example.com"}},
 		{Name: "example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -272,7 +275,7 @@ func TestAnalyze_NoCAARecord(t *testing.T) {
 			"example.com:A":   {Domain: "example.com", Rcode: mdns.RcodeSuccess, IPs: []net.IP{net.ParseIP("1.2.3.4")}},
 		},
 	}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "A", Values: []string{"1.2.3.4"}},
 	}
@@ -293,7 +296,7 @@ func TestAnalyze_NoCAARecord(t *testing.T) {
 
 func TestAnalyze_CAAExists(t *testing.T) {
 	mock := &mockResolver{responses: map[string]*dns.Result{}}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "A", Values: []string{"1.2.3.4"}},
 		{Name: "example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -314,7 +317,7 @@ func TestAnalyze_CAAExistsInDNS(t *testing.T) {
 			"example.com:A":   {Domain: "example.com", Rcode: mdns.RcodeSuccess, IPs: []net.IP{net.ParseIP("1.2.3.4")}},
 		},
 	}
-	a := New(mock, nil)
+	a := New(mock, nil, nil)
 	records := []Record{
 		{Name: "example.com", Type: "A", Values: []string{"1.2.3.4"}},
 	}
@@ -328,7 +331,7 @@ func TestAnalyze_CAAExistsInDNS(t *testing.T) {
 }
 
 func TestAnalyze_EmptyRecords(t *testing.T) {
-	a := New(&mockResolver{}, nil)
+	a := New(&mockResolver{}, nil, nil)
 	findings, err := a.Analyze(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -364,7 +367,7 @@ func TestAnalyze_TakeoverDedupOnOverlap(t *testing.T) {
 		{Service: "AWS S3", CNAMEs: []string{".s3.amazonaws.com"}, NXDomain: true},
 		{Service: "Custom S3", CNAMEs: []string{".s3.amazonaws.com"}, NXDomain: true},
 	}
-	a := New(mock, fps)
+	a := New(mock, fps, nil)
 	records := []Record{
 		{Name: "cdn.example.com", Type: "CNAME", Values: []string{"old.s3.amazonaws.com"}},
 		{Name: "cdn.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
@@ -381,5 +384,98 @@ func TestAnalyze_TakeoverDedupOnOverlap(t *testing.T) {
 	}
 	if findings[0].Service != "AWS S3" {
 		t.Errorf("expected first-matched service AWS S3, got %s", findings[0].Service)
+	}
+}
+
+
+
+func TestAnalyze_HTTPTakeover(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte("Sorry, this shop is currently unavailable"))
+	}))
+	defer srv.Close()
+
+	host := srv.URL[8:] // strip "https://"
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			host + ":A": {
+				Domain: host,
+				Rcode:  mdns.RcodeSuccess,
+				IPs:    []net.IP{net.ParseIP("127.0.0.1")},
+			},
+		},
+	}
+
+	fps := []dns.Fingerprint{{
+		Service:      "Shopify",
+		CNAMEs:       []string{host},
+		StatusCodes:  []int{404},
+		BodyPatterns: []string{"Sorry, this shop is currently unavailable"},
+		NXDomain:     false,
+	}}
+
+	checker := dns.NewChecker(srv.Client())
+	a := New(mock, fps, checker)
+	records := []Record{
+		{Name: "shop.example.com", Type: "CNAME", Values: []string{host}},
+		{Name: "shop.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 takeover finding, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Type != SubdomainTakeoverRisk {
+		t.Errorf("expected SUBDOMAIN_TAKEOVER_RISK, got %s", findings[0].Type)
+	}
+	if findings[0].Service != "Shopify" {
+		t.Errorf("expected Shopify, got %s", findings[0].Service)
+	}
+	if !strings.Contains(findings[0].Detail, "HTTP 404") {
+		t.Errorf("expected HTTP 404 in detail, got %s", findings[0].Detail)
+	}
+}
+
+func TestAnalyze_HTTPNoMatch(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("Welcome to my website"))
+	}))
+	defer srv.Close()
+
+	host := srv.URL[8:]
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			host + ":A": {
+				Domain: host,
+				Rcode:  mdns.RcodeSuccess,
+				IPs:    []net.IP{net.ParseIP("127.0.0.1")},
+			},
+		},
+	}
+
+	fps := []dns.Fingerprint{{
+		Service:      "Shopify",
+		CNAMEs:       []string{host},
+		StatusCodes:  []int{404},
+		BodyPatterns: []string{"Sorry, this shop is currently unavailable"},
+		NXDomain:     false,
+	}}
+
+	checker := dns.NewChecker(srv.Client())
+	a := New(mock, fps, checker)
+	records := []Record{
+		{Name: "shop.example.com", Type: "CNAME", Values: []string{host}},
+		{Name: "shop.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings, got %d", len(findings))
 	}
 }
