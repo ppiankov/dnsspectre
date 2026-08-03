@@ -4,6 +4,11 @@ All notable changes to dnsspectre will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-03
+
+- Wire HTTP fingerprint checker into analyzer for non-NXDomain takeover detection
+- Five services (Shopify, Fastly, Unbounce, WordPress.com, Tumblr) now produce takeover findings via HTTP response matching when DNS resolves but the service is claimable
+
 ## [0.2.0] - 2026-08-02
 
 - Wire config-file keys (platform, domain, zone, format, timeout) with flag-over-config precedence
