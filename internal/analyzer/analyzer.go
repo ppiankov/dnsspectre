@@ -80,10 +80,12 @@ func (a *Analyzer) checkCNAME(ctx context.Context, rec Record) []Finding {
 			}
 		}
 
-		// WO-33: HTTP-based check for non-NXDomain fingerprints
+		// WO-34: HTTP-based check for all fingerprints with HTTP patterns
+		// when DNS resolves (the service may be claimable via HTTP even
+		// if NXDomain:true — e.g., GitHub Pages, Heroku, Fly.io).
 		if !hasTakeover && a.checker != nil {
 			for _, fp := range matched {
-				if !fp.NXDomain {
+				if len(fp.StatusCodes) > 0 {
 					url := fmt.Sprintf("https://%s", target)
 					checkResult, checkErr := a.checker.Check(ctx, url, []dns.Fingerprint{fp})
 					if checkErr != nil {

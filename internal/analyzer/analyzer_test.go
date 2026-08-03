@@ -479,3 +479,56 @@ func TestAnalyze_HTTPNoMatch(t *testing.T) {
 		t.Errorf("expected 0 findings, got %d", len(findings))
 	}
 }
+
+func TestAnalyze_HTTPTakeoverNXDomainTrue(t *testing.T) {
+	// When a fingerprint has NXDomain:true AND HTTP patterns, and DNS
+	// resolves (not NXDOMAIN), the HTTP checker should still fire.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte("There isn't a GitHub Pages site here."))
+	}))
+	defer srv.Close()
+
+	host := srv.URL[8:]
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			host + ":A": {
+				Domain: host,
+				Rcode:  mdns.RcodeSuccess,
+				IPs:    []net.IP{net.ParseIP("127.0.0.1")},
+			},
+		},
+	}
+
+	// GitHub Pages fingerprint: NXDomain:true but ALSO has HTTP patterns
+	fps := []dns.Fingerprint{{
+		Service:      "GitHub Pages",
+		CNAMEs:       []string{host},
+		StatusCodes:  []int{404},
+		BodyPatterns: []string{"There isn't a GitHub Pages site here"},
+		NXDomain:     true,
+	}}
+
+	checker := dns.NewChecker(srv.Client())
+	a := New(mock, fps, checker)
+	records := []Record{
+		{Name: "blog.example.com", Type: "CNAME", Values: []string{host}},
+		{Name: "blog.example.com", Type: "CAA", Values: []string{"0 issue letsencrypt.org"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 takeover finding, got %d: %+v", len(findings), findings)
+	}
+	if findings[0].Type != SubdomainTakeoverRisk {
+		t.Errorf("expected SUBDOMAIN_TAKEOVER_RISK, got %s", findings[0].Type)
+	}
+	if findings[0].Service != "GitHub Pages" {
+		t.Errorf("expected GitHub Pages, got %s", findings[0].Service)
+	}
+	if !strings.Contains(findings[0].Detail, "HTTP 404") {
+		t.Errorf("expected HTTP 404 in detail, got %s", findings[0].Detail)
+	}
+}
