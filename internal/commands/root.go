@@ -35,6 +35,8 @@ AWS Route53, GCP Cloud DNS, Azure DNS, or Cloudflare.`,
 	f.StringVar(&opts.Format, "format", "text", "output format: json, text, sarif, spectrehub")
 	f.DurationVar(&opts.Timeout, "timeout", 5*time.Second, "DNS resolution timeout")
 	f.StringVar(&opts.Fingerprints, "fingerprints", "", "path to custom fingerprints file")
+	// WO-24: --config flag for explicit config file path
+	f.StringVar(&opts.Config, "config", "", "path to config file (default: $DNSSPECTRE_CONFIG or ~/.config/dnsspectre/config.yaml)")
 
 	rootCmd.AddCommand(newVersionCmd(vi))
 	rootCmd.AddCommand(newScanCmd(opts))

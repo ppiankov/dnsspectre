@@ -21,6 +21,7 @@ go install github.com/ppiankov/dnsspectre/cmd/dnsspectre@latest
 Scans DNS zones for security findings.
 
 **Flags:**
+- `--config path` — config file path (default: $DNSSPECTRE_CONFIG or platform-specific dir)
 - `--format text` — human-readable text output (default)
 - `--format json` — spectre/v1 JSON envelope
 - `--format sarif` — SARIF 2.1.0 for CI integration
@@ -59,7 +60,10 @@ Scans DNS zones for security findings.
 
 ### dnsspectre init
 
-Initialize configuration with sensible defaults.
+Generate a sample configuration file.
+
+**Flags:**
+- `--path path` — override config file location (default: platform-specific config dir)
 
 **Exit codes:**
 - 0: config created

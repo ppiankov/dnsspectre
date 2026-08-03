@@ -51,13 +51,19 @@ dnsspectre scan [flags]
 
 | Command | Description |
 |---------|-------------|
-| `dnsspectre init` | Generate `.dnsspectre.yaml` config file |
+| `dnsspectre init` | Generate sample config file (platform-specific dir or `--path`) |
 | `dnsspectre version` | Print version, commit, and build date |
 
 
 ## Configuration
 
-DNSSpectre reads `.dnsspectre.yaml` from the current directory:
+DNSSpectre reads configuration from a YAML file, discovered in this order:
+
+1. **`--config` flag** — explicit path (highest precedence)
+2. **`$DNSSPECTRE_CONFIG`** — environment variable
+3. **Platform-specific config dir** — `~/.config/dnsspectre/config.yaml` (Linux), `~/Library/Application Support/dnsspectre/config.yaml` (macOS), `%AppData%\dnsspectre\config.yaml` (Windows)
+
+**No CWD fallback** — a stray `.dnsspectre.yaml` in the current directory is ignored.
 
 ```yaml
 platform: aws
@@ -73,7 +79,7 @@ cloudflare:
   api_token: your-api-token
 ```
 
-Generate a sample config with `dnsspectre init`.
+Generate a sample config with `dnsspectre init` (creates in platform-specific config dir by default, or use `--path` to override).
 
 
 ## Authentication

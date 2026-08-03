@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -51,6 +52,34 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// WO-24: Discover finds the config file path using precedence:
+// 1. explicitPath (from --config flag)
+// 2. $DNSSPECTRE_CONFIG env var
+// 3. ~/.config/dnsspectre/config.yaml (XDG)
+// Returns empty string if no config found (no CWD fallback).
+func Discover(explicitPath string) string {
+	// 1. Explicit flag
+	if explicitPath != "" {
+		return explicitPath
+	}
+
+	// 2. Environment variable
+	if envPath := os.Getenv("DNSSPECTRE_CONFIG"); envPath != "" {
+		return envPath
+	}
+
+	// 3. XDG config home
+	if configHome, err := os.UserConfigDir(); err == nil {
+		xdgPath := filepath.Join(configHome, "dnsspectre", "config.yaml")
+		if _, err := os.Stat(xdgPath); err == nil {
+			return xdgPath
+		}
+	}
+
+	// 4. No CWD fallback — return empty to signal "no config"
+	return ""
 }
 
 // GCPProject returns the GCP project, preferring env var over config.

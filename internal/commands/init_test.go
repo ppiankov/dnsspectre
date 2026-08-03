@@ -8,30 +8,23 @@ import (
 	"testing"
 )
 
+// WO-24: Tests for init command config file creation
+
 func TestInitCreatesConfigFile(t *testing.T) {
 	dir := t.TempDir()
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	configPath := filepath.Join(dir, "config.yaml")
 
 	vi := VersionInfo{Version: "dev", Commit: "none", Date: "unknown"}
 	rootCmd, _ := NewRootCmd(vi)
 
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
-	rootCmd.SetArgs([]string{"init"})
+	rootCmd.SetArgs([]string{"init", "--path", configPath})
 
 	if err := rootCmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	configPath := filepath.Join(dir, ".dnsspectre.yaml")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("config file not created: %v", err)
@@ -51,25 +44,17 @@ func TestInitCreatesConfigFile(t *testing.T) {
 
 func TestInitRefusesToOverwrite(t *testing.T) {
 	dir := t.TempDir()
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
+	configPath := filepath.Join(dir, "config.yaml")
 
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, ".dnsspectre.yaml"), []byte("existing"), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte("existing"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	vi := VersionInfo{Version: "dev", Commit: "none", Date: "unknown"}
 	rootCmd, _ := NewRootCmd(vi)
-	rootCmd.SetArgs([]string{"init"})
+	rootCmd.SetArgs([]string{"init", "--path", configPath})
 
-	err = rootCmd.Execute()
+	err := rootCmd.Execute()
 	if err == nil {
 		t.Fatal("expected error when config already exists")
 	}

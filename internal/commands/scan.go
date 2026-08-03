@@ -31,8 +31,10 @@ Requires either --domain (DNS query mode) or --platform
 (platform enumeration mode). When using --platform, --zone is optional;
 omit it to scan all zones.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// WO-15: load config and apply its values as defaults for unset flags.
-			cfg, err := config.Load(".dnsspectre.yaml")
+			// WO-24: discover config path using precedence (--config > $DNSSPECTRE_CONFIG > XDG > none).
+			// No CWD fallback — eliminates silent-load problem from WO-12 review.
+			configPath := config.Discover(opts.Config)
+			cfg, err := config.Load(configPath)
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}

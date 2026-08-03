@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// GlobalOptions holds flag values shared across all subcommands.
+// WO-24: GlobalOptions holds flag values shared across all subcommands.
 type GlobalOptions struct {
 	Platform     string
 	Domain       string
@@ -13,6 +13,7 @@ type GlobalOptions struct {
 	Format       string
 	Timeout      time.Duration
 	Fingerprints string
+	Config       string // --config flag: explicit config file path
 }
 
 // VersionInfo holds build metadata injected via ldflags.
