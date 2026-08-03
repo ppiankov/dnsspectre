@@ -21,7 +21,10 @@ cd dnsspectre && make build
 
 ## Service fingerprints
 
-DNSSpectre includes a built-in fingerprint database for subdomain takeover detection. When a CNAME target returns NXDOMAIN and matches a known service pattern, the finding is escalated from `DANGLING_CNAME` to `SUBDOMAIN_TAKEOVER_RISK` (critical).
+DNSSpectre includes a built-in fingerprint database for subdomain takeover detection. Detection works in two layers:
+
+1. **NXDOMAIN** — when a CNAME target returns NXDOMAIN and matches a known service pattern, the finding is escalated from `DANGLING_CNAME` to `SUBDOMAIN_TAKEOVER_RISK` (critical).
+2. **HTTP response** — when a CNAME target DNS-resolves but the HTTP response matches a fingerprint's status code and body pattern, the service is flagged as claimable (e.g., Shopify returns 404 with "Sorry, this shop is currently unavailable").
 
 Supported services: AWS S3, GitHub Pages, Heroku, Azure Blob Storage, Azure Websites, Azure CDN, Azure Traffic Manager, Shopify, Fastly, Pantheon, Surge.sh, Unbounce, WordPress.com, Tumblr, Ghost, Fly.io, Netlify.
 
@@ -150,7 +153,7 @@ Key design decisions:
 
 ## Project status
 
-**Status: Beta** · **v0.2.0** · Pre-1.0
+**Status: Beta** · **v0.3.0** · Pre-1.0
 
 | Milestone | Status |
 |-----------|--------|
