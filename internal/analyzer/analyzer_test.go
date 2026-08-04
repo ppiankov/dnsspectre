@@ -532,3 +532,102 @@ func TestAnalyze_HTTPTakeoverNXDomainTrue(t *testing.T) {
 		t.Errorf("expected HTTP 404 in detail, got %s", findings[0].Detail)
 	}
 }
+
+func TestAnalyze_CAAParentInheritance(t *testing.T) {
+	// Subdomain has no CAA, but parent does — no finding
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			"sub.example.com:CAA":  {Domain: "sub.example.com", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"example.com:CAA":      {Domain: "example.com", Rcode: mdns.RcodeSuccess, CAAs: []dns.CAARecord{{Flag: 0, Tag: "issue", Value: "letsencrypt.org"}}},
+		},
+	}
+	a := New(mock, nil, nil)
+	records := []Record{
+		{Name: "sub.example.com", Type: "CNAME", Values: []string{"live.example.com"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Type == NoCAARecord {
+			t.Errorf("expected no CAA finding (parent has CAA), got %+v", f)
+		}
+	}
+}
+
+func TestAnalyze_CAANoAncestorCAA(t *testing.T) {
+	// No CAA on subdomain or any ancestor — finding emitted
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			"sub.example.com:CAA": {Domain: "sub.example.com", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"example.com:CAA":     {Domain: "example.com", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"com:CAA":             {Domain: "com", Rcode: mdns.RcodeSuccess, CAAs: nil},
+		},
+	}
+	a := New(mock, nil, nil)
+	records := []Record{
+		{Name: "sub.example.com", Type: "CNAME", Values: []string{"live.example.com"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasCAA := false
+	for _, f := range findings {
+		if f.Type == NoCAARecord {
+			hasCAA = true
+		}
+	}
+	if !hasCAA {
+		t.Error("expected NO_CAA_RECORD finding (no ancestor has CAA)")
+	}
+}
+
+func TestAnalyze_CAADeepInheritance(t *testing.T) {
+	// Deep subdomain, CAA on zone apex — no finding
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			"sync.cheelee.chatwoot.st.talala.la:CAA": {Domain: "sync.cheelee.chatwoot.st.talala.la", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"cheelee.chatwoot.st.talala.la:CAA":       {Domain: "cheelee.chatwoot.st.talala.la", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"chatwoot.st.talala.la:CAA":                {Domain: "chatwoot.st.talala.la", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"st.talala.la:CAA":                         {Domain: "st.talala.la", Rcode: mdns.RcodeSuccess, CAAs: nil},
+			"talala.la:CAA":                            {Domain: "talala.la", Rcode: mdns.RcodeSuccess, CAAs: []dns.CAARecord{{Flag: 0, Tag: "issue", Value: "letsencrypt.org"}}},
+		},
+	}
+	a := New(mock, nil, nil)
+	records := []Record{
+		{Name: "sync.cheelee.chatwoot.st.talala.la", Type: "CNAME", Values: []string{"live.example.com"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Type == NoCAARecord {
+			t.Errorf("expected no CAA finding (ancestor talala.la has CAA), got %+v", f)
+		}
+	}
+}
+
+func TestAnalyze_CAAOnDomainItself(t *testing.T) {
+	// CAA on the domain itself — no finding (existing behavior)
+	mock := &mockResolver{
+		responses: map[string]*dns.Result{
+			"example.com:CAA": {Domain: "example.com", Rcode: mdns.RcodeSuccess, CAAs: []dns.CAARecord{{Flag: 0, Tag: "issue", Value: "letsencrypt.org"}}},
+		},
+	}
+	a := New(mock, nil, nil)
+	records := []Record{
+		{Name: "example.com", Type: "CNAME", Values: []string{"live.example.com"}},
+	}
+	findings, err := a.Analyze(context.Background(), records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.Type == NoCAARecord {
+			t.Errorf("expected no CAA finding (domain has CAA), got %+v", f)
+		}
+	}
+}
