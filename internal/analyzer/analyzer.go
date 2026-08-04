@@ -184,27 +184,59 @@ func (a *Analyzer) checkMissingCAA(ctx context.Context, records []Record) []Find
 		}
 	}
 
+	// WO-33: cache CAA results across ancestor lookups to avoid
+	// repeated queries for the same parent domain.
+	caaCache := make(map[string]bool)
+
 	var findings []Finding
 	for domain := range domains {
 		if hasCAA[domain] {
 			continue
 		}
-		result, err := a.resolver.ResolveCAA(ctx, domain)
-		if err != nil {
+		if a.hasCAAInHierarchy(ctx, domain, caaCache) {
 			continue
 		}
-		if len(result.CAAs) == 0 {
-			findings = append(findings, Finding{
-				Type:     NoCAARecord,
-				Severity: SeverityLow,
-				Domain:   domain,
-				Record:   Record{Name: domain, Type: "CAA"},
-				Detail:   fmt.Sprintf("domain %s has no CAA record to restrict certificate issuance", domain),
-			})
-		}
+		findings = append(findings, Finding{
+			Type:     NoCAARecord,
+			Severity: SeverityLow,
+			Domain:   domain,
+			Record:   Record{Name: domain, Type: "CAA"},
+			Detail:   fmt.Sprintf("domain %s has no CAA record to restrict certificate issuance", domain),
+		})
 	}
 	return findings
 }
+
+// WO-33: hasCAAInHierarchy checks whether the domain or any ancestor
+// has a CAA record (RFC 8659 §3 inheritance). Results are cached per
+// domain to avoid repeated DNS queries for shared ancestors.
+func (a *Analyzer) hasCAAInHierarchy(ctx context.Context, domain string, cache map[string]bool) bool {
+	for d := domain; d != ""; d = parentDomain(d) {
+		if cached, ok := cache[d]; ok {
+			return cached
+		}
+		result, err := a.resolver.ResolveCAA(ctx, d)
+		if err != nil {
+			cache[d] = false
+			continue
+		}
+		if len(result.CAAs) > 0 {
+			cache[d] = true
+			return true
+		}
+		cache[d] = false
+	}
+	return false
+}
+
+// parentDomain returns the parent domain by stripping the leading label.
+func parentDomain(domain string) string {
+	if dot := strings.IndexByte(domain, '.'); dot != -1 {
+		return domain[dot+1:]
+	}
+	return ""
+}
+
 
 // parseMXHost extracts the hostname from an MX value like "10 mail.example.com".
 func parseMXHost(val string) string {
